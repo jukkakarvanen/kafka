@@ -288,6 +288,7 @@ public class SubscriptionInfo {
                 break;
             case 3:
             case 4:
+            case 5:
                 latestSupportedVersion = data.getInt();
                 subscriptionInfo = new SubscriptionInfo(usedVersion, latestSupportedVersion);
                 decodeVersionThreeData(subscriptionInfo, data);
