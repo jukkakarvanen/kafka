@@ -63,6 +63,7 @@ public class StreamsPartitionAssignor implements PartitionAssignor, Configurable
     private final static int VERSION_TWO = 2;
     private final static int VERSION_THREE = 3;
     private final static int VERSION_FOUR = 4;
+    private final static int VERSION_FIVE = 5;
     private final static int EARLIEST_PROBEABLE_VERSION = VERSION_THREE;
     protected final Set<Integer> supportedVersions = new HashSet<>();
 
@@ -876,6 +877,18 @@ public class StreamsPartitionAssignor implements PartitionAssignor, Configurable
                 processVersionFourAssignment(info, partitions, activeTasks, topicToPartitionInfo);
                 partitionsByHost = info.partitionsByHost();
                 break;
+            case VERSION_FIVE:
+                if (leaderSupportedVersion > usedSubscriptionMetadataVersion) {
+                    log.info("Sent a version {} subscription and group leader's latest supported version is {}. " +
+                                    "Upgrading subscription metadata version to {} for next rebalance.",
+                            usedSubscriptionMetadataVersion,
+                            leaderSupportedVersion,
+                            leaderSupportedVersion);
+                    usedSubscriptionMetadataVersion = leaderSupportedVersion;
+                }
+                processVersionFiveAssignment(info, partitions, activeTasks, topicToPartitionInfo);
+                partitionsByHost = info.partitionsByHost();
+                break;
             default:
                 throw new IllegalStateException("This code should never be reached. Please file a bug report at https://issues.apache.org/jira/projects/KAFKA/");
         }
@@ -934,6 +947,13 @@ public class StreamsPartitionAssignor implements PartitionAssignor, Configurable
                                               final Map<TaskId, Set<TopicPartition>> activeTasks,
                                               final Map<TopicPartition, PartitionInfo> topicToPartitionInfo) {
         processVersionThreeAssignment(info, partitions, activeTasks, topicToPartitionInfo);
+    }
+
+    private void processVersionFiveAssignment(final AssignmentInfo info,
+                                              final List<TopicPartition> partitions,
+                                              final Map<TaskId, Set<TopicPartition>> activeTasks,
+                                              final Map<TopicPartition, PartitionInfo> topicToPartitionInfo) {
+        processVersionFourAssignment(info, partitions, activeTasks, topicToPartitionInfo);
     }
 
     // for testing

@@ -41,7 +41,7 @@ public class AssignmentInfo {
 
     private static final Logger log = LoggerFactory.getLogger(AssignmentInfo.class);
 
-    public static final int LATEST_SUPPORTED_VERSION = 4;
+    public static final int LATEST_SUPPORTED_VERSION = 5;
     static final int UNKNOWN = -1;
 
     private final int usedVersion;
@@ -145,6 +145,9 @@ public class AssignmentInfo {
                 case 4:
                     encodeVersionFour(out);
                     break;
+                case 5:
+                    encodeVersionFive(out);
+                    break;
                 default:
                     throw new IllegalStateException("Unknown metadata version: " + usedVersion
                         + "; latest supported version: " + LATEST_SUPPORTED_VERSION);
@@ -223,6 +226,14 @@ public class AssignmentInfo {
         out.writeInt(errCode);
     }
 
+    private void encodeVersionFive(final DataOutputStream out) throws IOException {
+        out.writeInt(5);
+        out.writeInt(LATEST_SUPPORTED_VERSION);
+        encodeActiveAndStandbyTaskAssignment(out);
+        encodePartitionsByHost(out);
+        out.writeInt(errCode);
+    }
+
     /**
      * @throws TaskAssignmentException if method fails to decode the data or if the data version is unknown
      */
@@ -253,6 +264,11 @@ public class AssignmentInfo {
                     latestSupportedVersion = in.readInt();
                     assignmentInfo = new AssignmentInfo(usedVersion, latestSupportedVersion);
                     decodeVersionFourData(assignmentInfo, in);
+                    break;
+                case 5:
+                    latestSupportedVersion = in.readInt();
+                    assignmentInfo = new AssignmentInfo(usedVersion, latestSupportedVersion);
+                    decodeVersionFiveData(assignmentInfo, in);
                     break;
                 default:
                     final TaskAssignmentException fatalException = new TaskAssignmentException("Unable to decode assignment data: " +
@@ -330,6 +346,11 @@ public class AssignmentInfo {
                                               final DataInputStream in) throws IOException {
         decodeVersionThreeData(assignmentInfo, in);
         assignmentInfo.errCode = in.readInt();
+    }
+
+    private static void decodeVersionFiveData(final AssignmentInfo assignmentInfo,
+                                              final DataInputStream in) throws IOException {
+        decodeVersionFourData(assignmentInfo, in);
     }
 
     @Override
