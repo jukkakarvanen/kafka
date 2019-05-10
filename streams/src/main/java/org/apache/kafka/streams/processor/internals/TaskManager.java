@@ -380,6 +380,12 @@ public class TaskManager {
         this.assignedStandbyTasks = standbyTasks;
     }
 
+    public void updateLocking(final boolean useOldLocking) {
+        for (final TaskId taskId : assignedActiveTasks.keySet()) {
+            taskCreator.stateDirectory.updateLocking(taskId, useOldLocking);
+        }
+    }
+
     public void updateSubscriptionsFromAssignment(final List<TopicPartition> partitions) {
         if (builder().sourceTopicPattern() != null) {
             final Set<String> assignedTopics = new HashSet<>();

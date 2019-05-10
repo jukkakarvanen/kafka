@@ -52,6 +52,7 @@ public class StateDirectory {
     private final boolean createStateDirectory;
     private final HashMap<TaskId, FileChannel> channels = new HashMap<>();
     private final HashMap<TaskId, LockAndOwner> locks = new HashMap<>();
+    private final HashMap<TaskId, Boolean> useOldLockingMap = new HashMap<>();
     private final Time time;
 
     private FileChannel globalStateChannel;
@@ -123,6 +124,20 @@ public class StateDirectory {
         return String.format("stream-thread [%s]", Thread.currentThread().getName());
     }
 
+    public void updateLocking(final TaskId taskId, final boolean useOldLocking) {
+        useOldLockingMap.put(taskId, useOldLocking);
+    }
+
+    private File getLockFile(final TaskId taskId) {
+        Boolean useOldLocking = useOldLockingMap.get(taskId);
+        if (useOldLocking == null) {
+            throw new IllegalStateException("Locking policy not set. Please file a bug report at https://issues.apache.org/jira/projects/KAFKA/");
+        }
+        if (useOldLocking)
+            return new File(directoryForTask(taskId), LOCK_FILE_NAME);
+        return new File(stateDir, taskId + LOCK_FILE_NAME);
+    }
+
     /**
      * Get the lock for the {@link TaskId}s directory if it is available
      * @param taskId
@@ -146,7 +161,7 @@ public class StateDirectory {
         }
 
         try {
-            lockFile = new File(directoryForTask(taskId), LOCK_FILE_NAME);
+            lockFile = getLockFile(taskId);
         } catch (final ProcessorStateException e) {
             // directoryForTask could be throwing an exception if another thread
             // has concurrently deleted the directory
@@ -321,6 +336,7 @@ public class StateDirectory {
                             throw e;
                         }
                     }
+                    useOldLockingMap.remove(id);
                 }
             }
         }

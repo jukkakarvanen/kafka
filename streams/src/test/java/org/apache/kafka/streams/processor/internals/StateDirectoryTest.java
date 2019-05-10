@@ -204,10 +204,14 @@ public class StateDirectoryTest {
     public void shouldCleanUpTaskStateDirectoriesThatAreNotCurrentlyLocked() throws Exception {
         final TaskId task0 = new TaskId(0, 0);
         final TaskId task1 = new TaskId(1, 0);
+        final TaskId task2 = new TaskId(1, 0);
+        directory.updateLocking(task0, false);
+        directory.updateLocking(task1, false);
+        directory.updateLocking(task2, false);
         try {
             directory.lock(task0);
             directory.lock(task1);
-            directory.directoryForTask(new TaskId(2, 0));
+            directory.directoryForTask(task2);
 
             List<File> files = Arrays.asList(Objects.requireNonNull(appDir.listFiles()));
             assertEquals(3, files.size());
