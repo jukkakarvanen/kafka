@@ -673,6 +673,7 @@ public class StandbyTaskTest {
 
             @Override
             void closeStateManager(final boolean clean) throws ProcessorStateException {
+                super.closeStateManager(clean);
                 closedStateManager.set(true);
             }
         };

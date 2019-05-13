@@ -1363,6 +1363,7 @@ public class StreamTaskTest {
         final StreamTask task = createStatefulTask(createConfig(false), false);
 
         assertTrue(task.initializeStateStores());
+        task.closeStateManager(true);
     }
 
     @Test
@@ -1370,6 +1371,7 @@ public class StreamTaskTest {
         final StreamTask task = createStatefulTask(createConfig(false), true);
 
         assertFalse(task.initializeStateStores());
+        task.closeStateManager(true);
     }
 
     @Test
