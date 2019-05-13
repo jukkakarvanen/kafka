@@ -247,7 +247,7 @@ public class StateDirectoryTest {
             List<File> files = Arrays.asList(Objects.requireNonNull(directory.listTaskDirectories()));
             assertEquals(3, files.size());
 
-            time.sleep(5000);
+            time.sleep(1000);
             directory.cleanRemovedTasks(0);
 
             files = Arrays.asList(Objects.requireNonNull(directory.listTaskDirectories()));
