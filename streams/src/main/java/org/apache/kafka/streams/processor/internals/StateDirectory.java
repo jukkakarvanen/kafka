@@ -153,9 +153,11 @@ public class StateDirectory {
     }
 
     File getLockFile(final TaskId taskId) {
-        Boolean useOldLocking = useOldLockingMap.get(taskId);
+        final Boolean useOldLocking = useOldLockingMap.get(taskId);
         if (useOldLocking == null) {
-            throw new IllegalStateException("Locking policy not set. Please file a bug report at https://issues.apache.org/jira/projects/KAFKA/");
+            //throw new IllegalStateException("Locking policy not set. Please file a bug report at https://issues.apache.org/jira/projects/KAFKA/");
+            //useOldLocking = false;
+            return new File(locksDir(), taskId + LOCK_FILE_NAME);
         }
         if (useOldLocking)
             return new File(directoryForTask(taskId), LOCK_FILE_NAME);
@@ -267,7 +269,7 @@ public class StateDirectory {
         }
     }
 
-    void forceUnlockTask(TaskId taskId) throws IOException {
+    void forceUnlockTask(final TaskId taskId) throws IOException {
         locks.remove(taskId).lock.release();
         log.debug("{} Released state dir lock for task {}", logPrefix(), taskId);
 
@@ -285,7 +287,7 @@ public class StateDirectory {
             throw new StreamsException(e);
         }
         try {
-            File globalDir = globalStateDirFile();
+            final File globalDir = globalStateDirFile();
             if (globalDir.exists()) {
                 Utils.delete(globalDir.getAbsoluteFile());
             }
@@ -294,7 +296,7 @@ public class StateDirectory {
             throw new StreamsException(e);
         }
         try {
-            File lockDir = locksDirFile();
+            final File lockDir = locksDirFile();
             if (lockDir.exists()) {
                 Utils.delete(lockDir.getAbsoluteFile());
             }
