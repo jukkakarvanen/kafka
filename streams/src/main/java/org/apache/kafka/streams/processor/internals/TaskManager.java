@@ -384,6 +384,9 @@ public class TaskManager {
         for (final TaskId taskId : assignedActiveTasks.keySet()) {
             taskCreator.stateDirectory.updateLocking(taskId, useOldLocking);
         }
+        for (final TaskId taskId : assignedStandbyTasks.keySet()) {
+            taskCreator.stateDirectory.updateLocking(taskId, useOldLocking);
+        }
     }
 
     public void updateSubscriptionsFromAssignment(final List<TopicPartition> partitions) {
