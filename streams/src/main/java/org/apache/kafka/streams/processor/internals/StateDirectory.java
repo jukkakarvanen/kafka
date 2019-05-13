@@ -46,6 +46,7 @@ public class StateDirectory {
     private static final Pattern PATH_NAME = Pattern.compile("\\d+_\\d+");
 
     static final String LOCK_FILE_NAME = ".lock";
+    static final String LOCKS_DIR_NAME = "locks";
     private static final Logger log = LoggerFactory.getLogger(StateDirectory.class);
 
     private final File stateDir;
@@ -107,17 +108,40 @@ public class StateDirectory {
     }
 
     /**
+     * Get or create the directory for the locks.
+     * @return directory for the locks
+     * @throws ProcessorStateException if the locks directory does not exists and could not be created
+     */
+    File locksDir() {
+        final File dir = locksDirFile();
+        if (createStateDirectory && !dir.exists() && !dir.mkdir()) {
+            throw new ProcessorStateException(
+                    String.format("locks directory [%s] doesn't exist and couldn't be created", dir.getPath()));
+        }
+        return dir;
+    }
+
+    File locksDirFile() {
+        return new File(stateDir, LOCKS_DIR_NAME);
+    }
+
+    /**
      * Get or create the directory for the global stores.
      * @return directory for the global stores
      * @throws ProcessorStateException if the global store directory does not exists and could not be created
      */
     File globalStateDir() {
-        final File dir = new File(stateDir, "global");
+        final File dir = globalStateDirFile();
         if (createStateDirectory && !dir.exists() && !dir.mkdir()) {
             throw new ProcessorStateException(
                 String.format("global state directory [%s] doesn't exist and couldn't be created", dir.getPath()));
         }
         return dir;
+    }
+
+
+    private File globalStateDirFile() {
+        return new File(stateDir, "global");
     }
 
     private String logPrefix() {
@@ -128,14 +152,14 @@ public class StateDirectory {
         useOldLockingMap.put(taskId, useOldLocking);
     }
 
-    private File getLockFile(final TaskId taskId) {
+    File getLockFile(final TaskId taskId) {
         Boolean useOldLocking = useOldLockingMap.get(taskId);
         if (useOldLocking == null) {
             throw new IllegalStateException("Locking policy not set. Please file a bug report at https://issues.apache.org/jira/projects/KAFKA/");
         }
         if (useOldLocking)
             return new File(directoryForTask(taskId), LOCK_FILE_NAME);
-        return new File(stateDir, taskId + LOCK_FILE_NAME);
+        return new File(locksDir(), taskId + LOCK_FILE_NAME);
     }
 
     /**
@@ -239,14 +263,17 @@ public class StateDirectory {
     synchronized void unlock(final TaskId taskId) throws IOException {
         final LockAndOwner lockAndOwner = locks.get(taskId);
         if (lockAndOwner != null && lockAndOwner.owningThread.equals(Thread.currentThread().getName())) {
-            locks.remove(taskId);
-            lockAndOwner.lock.release();
-            log.debug("{} Released state dir lock for task {}", logPrefix(), taskId);
+            forceUnlockTask(taskId);
+        }
+    }
 
-            final FileChannel fileChannel = channels.remove(taskId);
-            if (fileChannel != null) {
-                fileChannel.close();
-            }
+    void forceUnlockTask(TaskId taskId) throws IOException {
+        locks.remove(taskId).lock.release();
+        log.debug("{} Released state dir lock for task {}", logPrefix(), taskId);
+
+        final FileChannel fileChannel = channels.remove(taskId);
+        if (fileChannel != null) {
+            fileChannel.close();
         }
     }
 
@@ -258,11 +285,21 @@ public class StateDirectory {
             throw new StreamsException(e);
         }
         try {
-            if (stateDir.exists()) {
-                Utils.delete(globalStateDir().getAbsoluteFile());
+            File globalDir = globalStateDirFile();
+            if (globalDir.exists()) {
+                Utils.delete(globalDir.getAbsoluteFile());
             }
         } catch (final IOException e) {
             log.error("{} Failed to delete global state directory due to an unexpected exception", logPrefix(), e);
+            throw new StreamsException(e);
+        }
+        try {
+            File lockDir = locksDirFile();
+            if (lockDir.exists()) {
+                Utils.delete(lockDir.getAbsoluteFile());
+            }
+        } catch (final IOException e) {
+            log.error("{} Failed to delete locks directory due to an unexpected exception", logPrefix(), e);
             throw new StreamsException(e);
         }
     }
@@ -314,6 +351,7 @@ public class StateDirectory {
                                         id);
                             }
                             Utils.delete(taskDir);
+                            useOldLockingMap.remove(id);
                         }
                     }
                 } catch (final OverlappingFileLockException e) {
@@ -336,7 +374,6 @@ public class StateDirectory {
                             throw e;
                         }
                     }
-                    useOldLockingMap.remove(id);
                 }
             }
         }

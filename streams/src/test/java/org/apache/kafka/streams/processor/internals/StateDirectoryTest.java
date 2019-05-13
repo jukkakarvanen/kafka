@@ -25,26 +25,35 @@ import org.apache.kafka.test.TestUtils;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
+import static org.hamcrest.CoreMatchers.hasItems;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+@RunWith(value = Parameterized.class)
 public class StateDirectoryTest {
 
     private final MockTime time = new MockTime();
@@ -52,6 +61,21 @@ public class StateDirectoryTest {
     private final String applicationId = "applicationId";
     private StateDirectory directory;
     private File appDir;
+    final private boolean useOldLocking;
+
+
+    @Parameterized.Parameters(name = "Use Old Locking = {0}")
+    public static Collection<Object[]> data() {
+        final List<Object[]> values = new ArrayList<>();
+        for (final boolean eosEnabled : Arrays.asList(true, false)) {
+            values.add(new Object[] {eosEnabled});
+        }
+        return values;
+    }
+
+    public StateDirectoryTest(final boolean useOldLocking) {
+        this.useOldLocking = useOldLocking;
+    }
 
     private void initializeStateDirectory(final boolean createStateDirectory) throws Exception {
         stateDir = new File(TestUtils.IO_TMP_DIR, "kafka-" + TestUtils.randomString(5));
@@ -100,12 +124,13 @@ public class StateDirectoryTest {
     public void shouldLockTaskStateDirectory() throws Exception {
         final TaskId taskId = new TaskId(0, 0);
         final File taskDirectory = directory.directoryForTask(taskId);
+        directory.updateLocking(taskId, useOldLocking);
 
         directory.lock(taskId);
 
         try (
             final FileChannel channel = FileChannel.open(
-                new File(taskDirectory, StateDirectory.LOCK_FILE_NAME).toPath(),
+                    directory.getLockFile(taskId).toPath(),
                 StandardOpenOption.CREATE, StandardOpenOption.WRITE)
         ) {
             channel.tryLock();
@@ -121,6 +146,7 @@ public class StateDirectoryTest {
     public void shouldBeTrueIfAlreadyHoldsLock() throws Exception {
         final TaskId taskId = new TaskId(0, 0);
         directory.directoryForTask(taskId);
+        directory.updateLocking(taskId, useOldLocking);
         directory.lock(taskId);
         try {
             assertTrue(directory.lock(taskId));
@@ -146,6 +172,7 @@ public class StateDirectoryTest {
     @Test
     public void shouldNotLockDeletedDirectory() throws Exception {
         final TaskId taskId = new TaskId(0, 0);
+        directory.updateLocking(taskId, useOldLocking);
 
         Utils.delete(stateDir);
         assertFalse(directory.lock(taskId));
@@ -155,16 +182,17 @@ public class StateDirectoryTest {
     public void shouldLockMultipleTaskDirectories() throws Exception {
         final TaskId taskId = new TaskId(0, 0);
         final File task1Dir = directory.directoryForTask(taskId);
+        directory.updateLocking(taskId, useOldLocking);
         final TaskId taskId2 = new TaskId(1, 0);
         final File task2Dir = directory.directoryForTask(taskId2);
-
+        directory.updateLocking(taskId2, useOldLocking);
 
         try (
             final FileChannel channel1 = FileChannel.open(
-                new File(task1Dir, StateDirectory.LOCK_FILE_NAME).toPath(),
+                directory.getLockFile(taskId).toPath(),
                 StandardOpenOption.CREATE,
                 StandardOpenOption.WRITE);
-            final FileChannel channel2 = FileChannel.open(new File(task2Dir, StateDirectory.LOCK_FILE_NAME).toPath(),
+            final FileChannel channel2 = FileChannel.open(directory.getLockFile(taskId2).toPath(),
                 StandardOpenOption.CREATE,
                 StandardOpenOption.WRITE)
         ) {
@@ -186,6 +214,7 @@ public class StateDirectoryTest {
     public void shouldReleaseTaskStateDirectoryLock() throws Exception {
         final TaskId taskId = new TaskId(0, 0);
         final File taskDirectory = directory.directoryForTask(taskId);
+        directory.updateLocking(taskId, useOldLocking);
 
         directory.lock(taskId);
         directory.unlock(taskId);
@@ -204,23 +233,27 @@ public class StateDirectoryTest {
     public void shouldCleanUpTaskStateDirectoriesThatAreNotCurrentlyLocked() throws Exception {
         final TaskId task0 = new TaskId(0, 0);
         final TaskId task1 = new TaskId(1, 0);
-        final TaskId task2 = new TaskId(1, 0);
-        directory.updateLocking(task0, false);
-        directory.updateLocking(task1, false);
-        directory.updateLocking(task2, false);
+        final TaskId task2 = new TaskId(2, 0);
+        directory.updateLocking(task0, useOldLocking);
+        directory.updateLocking(task1, useOldLocking);
+        directory.updateLocking(task2, useOldLocking);
         try {
+            directory.directoryForTask(task0);
+            directory.directoryForTask(task1);
             directory.lock(task0);
             directory.lock(task1);
             directory.directoryForTask(task2);
 
-            List<File> files = Arrays.asList(Objects.requireNonNull(appDir.listFiles()));
+            List<File> files = Arrays.asList(Objects.requireNonNull(directory.listTaskDirectories()));
             assertEquals(3, files.size());
 
-            time.sleep(1000);
+            time.sleep(5000);
             directory.cleanRemovedTasks(0);
 
-            files = Arrays.asList(Objects.requireNonNull(appDir.listFiles()));
+            files = Arrays.asList(Objects.requireNonNull(directory.listTaskDirectories()));
             assertEquals(2, files.size());
+            //This is failing in Windows with useOldLocking=true due to lock is in task directory
+            //This is reason for useOldLocking=false KAFKA-6647
             assertTrue(files.contains(new File(appDir, task0.toString())));
             assertTrue(files.contains(new File(appDir, task1.toString())));
         } finally {
@@ -231,7 +264,9 @@ public class StateDirectoryTest {
 
     @Test
     public void shouldCleanupStateDirectoriesWhenLastModifiedIsLessThanNowMinusCleanupDelay() {
-        final File dir = directory.directoryForTask(new TaskId(2, 0));
+        final TaskId taskId = new TaskId(2, 0);
+        final File dir = directory.directoryForTask(taskId);
+        directory.updateLocking(taskId, useOldLocking);
         final int cleanupDelayMs = 60000;
         directory.cleanRemovedTasks(cleanupDelayMs);
         assertTrue(dir.exists());
@@ -239,6 +274,7 @@ public class StateDirectoryTest {
         time.sleep(cleanupDelayMs + 1000);
         directory.cleanRemovedTasks(cleanupDelayMs);
         assertFalse(dir.exists());
+        //This is failing in Windows with useOldLocking=true due to lock is changing modification time
     }
 
     @Test
@@ -316,6 +352,7 @@ public class StateDirectoryTest {
     @Test
     public void shouldNotLockStateDirLockedByAnotherThread() throws Exception {
         final TaskId taskId = new TaskId(0, 0);
+        directory.updateLocking(taskId, useOldLocking);
         final AtomicReference<IOException> exceptionOnThread = new AtomicReference<>();
         final Thread thread = new Thread(() -> {
             try {
@@ -328,11 +365,13 @@ public class StateDirectoryTest {
         thread.join(30000);
         assertNull("should not have had an exception during locking on other thread", exceptionOnThread.get());
         assertFalse(directory.lock(taskId));
+        directory.forceUnlockTask(taskId);
     }
 
     @Test
     public void shouldNotUnLockStateDirLockedByAnotherThread() throws Exception {
         final TaskId taskId = new TaskId(0, 0);
+        directory.updateLocking(taskId, useOldLocking);
         final CountDownLatch lockLatch = new CountDownLatch(1);
         final CountDownLatch unlockLatch = new CountDownLatch(1);
         final AtomicReference<Exception> exceptionOnThread = new AtomicReference<>();
@@ -358,17 +397,22 @@ public class StateDirectoryTest {
 
         assertNull("should not have had an exception on other thread", exceptionOnThread.get());
         assertTrue(directory.lock(taskId));
+        directory.unlock(taskId);
     }
 
     @Test
     public void shouldCleanupAllTaskDirectoriesIncludingGlobalOne() {
-        directory.directoryForTask(new TaskId(1, 0));
+        final TaskId taskId = new TaskId(1, 0);
+        directory.directoryForTask(taskId);
+        directory.updateLocking(taskId, useOldLocking);
         directory.globalStateDir();
 
         List<File> files = Arrays.asList(Objects.requireNonNull(appDir.listFiles()));
         assertEquals(2, files.size());
 
         directory.clean();
+        //This is failing in Windows with useOldLocking=true due to lock is in task directory
+        //This is reason for useOldLocking=false KAFKA-6647
 
         files = Arrays.asList(Objects.requireNonNull(appDir.listFiles()));
         assertEquals(0, files.size());
