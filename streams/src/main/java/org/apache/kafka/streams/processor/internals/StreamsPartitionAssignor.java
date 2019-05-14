@@ -843,7 +843,7 @@ public class StreamsPartitionAssignor implements PartitionAssignor, Configurable
         // version 2 fields
         final Map<TopicPartition, PartitionInfo> topicToPartitionInfo = new HashMap<>();
         final Map<HostInfo, Set<TopicPartition>> partitionsByHost;
-        boolean useOldLocking = false;
+        boolean useOldLocking = true;
 
         switch (receivedAssignmentMetadataVersion) {
             case VERSION_ONE:
@@ -889,7 +889,7 @@ public class StreamsPartitionAssignor implements PartitionAssignor, Configurable
                 }
                 processVersionFiveAssignment(info, partitions, activeTasks, topicToPartitionInfo);
                 partitionsByHost = info.partitionsByHost();
-                useOldLocking = true;
+                useOldLocking = false;
                 break;
             default:
                 throw new IllegalStateException("This code should never be reached. Please file a bug report at https://issues.apache.org/jira/projects/KAFKA/");
